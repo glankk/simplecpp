@@ -278,6 +278,14 @@ int main(int argc, char **argv)
             case simplecpp::Output::PORTABILITY_BACKSLASH:
                 std::cerr << "portability: ";
                 break;
+            case simplecpp::Output::PORTABILITY_NO_EOF_NEWLINE:
+                if (simplecpp::getCStd(dui.std) == simplecpp::CUnknown) {
+                    // Only UB for c code, suppress for c++ code
+                    // If no standard is specified then prefer to have a false negative
+                    continue;
+                }
+                std::cerr << "portability: ";
+                break;
             case simplecpp::Output::UNHANDLED_CHAR_ERROR:
                 std::cerr << "unhandled char error: ";
                 break;

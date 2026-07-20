@@ -217,6 +217,9 @@ static std::string toString(const simplecpp::OutputList &outputList)
         case simplecpp::Output::Type::PORTABILITY_BACKSLASH:
             ostr << "portability_backslash,";
             break;
+        case simplecpp::Output::Type::PORTABILITY_NO_EOF_NEWLINE:
+            ostr << "portability_no_eof_newline,";
+            break;
         case simplecpp::Output::Type::UNHANDLED_CHAR_ERROR:
             ostr << "unhandled_char_error,";
             break;
@@ -241,15 +244,15 @@ static void backslash()
     // <backslash><space><newline> preprocessed differently
     simplecpp::OutputList outputList;
 
-    readfile("//123 \\\n456", &outputList);
+    readfile("//123 \\\n456\n", &outputList);
     ASSERT_EQUALS("", toString(outputList));
-    readfile("//123 \\ \n456", &outputList);
+    readfile("//123 \\ \n456\n", &outputList);
     ASSERT_EQUALS("file0,1,portability_backslash,Combination 'backslash space newline' is not portable.\n", toString(outputList));
 
     outputList.clear();
-    readfile("#define A \\\n123", &outputList);
+    readfile("#define A \\\n123\n", &outputList);
     ASSERT_EQUALS("", toString(outputList));
-    readfile("#define A \\ \n123", &outputList);
+    readfile("#define A \\ \n123\n", &outputList);
     ASSERT_EQUALS("file0,1,portability_backslash,Combination 'backslash space newline' is not portable.\n", toString(outputList));
 }
 
@@ -1465,7 +1468,7 @@ static void error4()
     simplecpp::FileDataCache cache;
     simplecpp::OutputList outputList;
     simplecpp::TokenList tokens2(files);
-    const simplecpp::TokenList rawtoken = makeTokenList(code, sizeof(code),files,"test.c");
+    const simplecpp::TokenList rawtoken = makeTokenList(code, sizeof(code)-1,files,"test.c");
     simplecpp::preprocess(tokens2, rawtoken, files, cache, simplecpp::DUI(), &outputList);
     ASSERT_EQUALS("file0,1,#error,#error x\n", toString(outputList));
 }
@@ -1478,7 +1481,7 @@ static void error5()
     simplecpp::FileDataCache cache;
     simplecpp::OutputList outputList;
     simplecpp::TokenList tokens2(files);
-    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code),files,"test.c");
+    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code)-1,files,"test.c");
     simplecpp::preprocess(tokens2, rawtokens, files, cache, simplecpp::DUI(), &outputList);
     ASSERT_EQUALS("file0,1,#error,#error x\n", toString(outputList));
 }
@@ -1491,7 +1494,7 @@ static void error6()
     simplecpp::FileDataCache cache;
     simplecpp::OutputList outputList;
     simplecpp::TokenList tokens2(files);
-    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code),files,"test.c");
+    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code)-1,files,"test.c");
     simplecpp::preprocess(tokens2, rawtokens, files, cache, simplecpp::DUI(), &outputList);
     ASSERT_EQUALS("file0,1,#error,#error \n", toString(outputList));
 }
@@ -1503,7 +1506,7 @@ static void error7()
     simplecpp::FileDataCache cache;
     simplecpp::OutputList outputList;
     simplecpp::TokenList tokens2(files);
-    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code),files,"test.c");
+    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code)-1,files,"test.c");
     simplecpp::preprocess(tokens2, rawtokens, files, cache, simplecpp::DUI(), &outputList);
     ASSERT_EQUALS("file0,1,#error,#error blabla\n", toString(outputList));
 }
@@ -1515,7 +1518,7 @@ static void error8()
     simplecpp::FileDataCache cache;
     simplecpp::OutputList outputList;
     simplecpp::TokenList tokens2(files);
-    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code),files,"test.c");
+    const simplecpp::TokenList rawtokens = makeTokenList(code, sizeof(code)-1,files,"test.c");
     simplecpp::preprocess(tokens2, rawtokens, files, cache, simplecpp::DUI(), &outputList);
     ASSERT_EQUALS("file0,1,#error,#error blabla\n", toString(outputList));
 }
@@ -3081,9 +3084,9 @@ static void include11()   // #669 - -include with preprocess()
 
 static void readfile_nullbyte()
 {
-    const char code[] = "ab\0cd";
+    const char code[] = "ab\0cd\n";
     simplecpp::OutputList outputList;
-    ASSERT_EQUALS("ab cd", readfile(code,sizeof(code), &outputList));
+    ASSERT_EQUALS("ab cd", readfile(code,sizeof(code)-1, &outputList));
     ASSERT_EQUALS(true, outputList.empty()); // should warning be written?
 }
 
@@ -3198,7 +3201,7 @@ static void readfile_string_error()
     outputList.clear();
 
     // Don't warn for a multiline define
-    readfile("#define A \"abs\\\n\"", &outputList);
+    readfile("#define A \"abs\\\n\"\n", &outputList);
     ASSERT_EQUALS("", toString(outputList));
 }
 
@@ -3210,11 +3213,11 @@ static void readfile_cpp14_number()
 static void readfile_unhandled_chars()
 {
     simplecpp::OutputList outputList;
-    readfile("// 你好世界", &outputList);
+    readfile("// 你好世界\n", &outputList);
     ASSERT_EQUALS("", toString(outputList));
-    readfile("s=\"你好世界\"", &outputList);
+    readfile("s=\"你好世界\"\n", &outputList);
     ASSERT_EQUALS("", toString(outputList));
-    readfile("int 你好世界=0;", &outputList);
+    readfile("int 你好世界=0;\n", &outputList);
     ASSERT_EQUALS("file0,1,unhandled_char_error,The code contains unhandled character(s) (character code=228). Neither unicode nor extended ascii is supported.\n", toString(outputList));
 }
 
@@ -3232,6 +3235,70 @@ static void readfile_file_not_found()
     std::vector<std::string> files;
     (void)simplecpp::TokenList("NotAFile", files, &outputList);
     ASSERT_EQUALS("file0,0,file_not_found,File is missing: NotAFile\n", toString(outputList));
+}
+
+static void readfile_no_eof_newline()
+{
+    {
+        const char code[] = "";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("", toString(outputList));
+    }
+    {
+        const char code[] = "\n";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("", toString(outputList));
+    }
+    {
+        const char code[] = "\\\n";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("file0,1,portability_no_eof_newline,No newline at end of file.\n", toString(outputList));
+    }
+    {
+        const char code[] = "#define A";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("file0,1,portability_no_eof_newline,No newline at end of file.\n", toString(outputList));
+    }
+    {
+        const char code[] = "#define A\n";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("", toString(outputList));
+    }
+    {
+        const char code[] = "#define A\\";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("file0,1,portability_no_eof_newline,No newline at end of file.\n", toString(outputList));
+    }
+    {
+        const char code[] = "// comment";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("file0,1,portability_no_eof_newline,No newline at end of file.\n", toString(outputList));
+    }
+    {
+        const char code[] = "// comment\n";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("", toString(outputList));
+    }
+    {
+        const char code[] = "/* comment \n comment */";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("file0,2,portability_no_eof_newline,No newline at end of file.\n", toString(outputList));
+    }
+    {
+        const char code[] = "/* comment \n comment */\n";
+        simplecpp::OutputList outputList;
+        readfile(code, sizeof(code)-1, &outputList);
+        ASSERT_EQUALS("", toString(outputList));
+    }
 }
 
 static void stringify1()
@@ -3377,31 +3444,31 @@ static void unicode()
 {
     {
         const char code[] = "\xFE\xFF\x00\x31\x00\x32";
-        ASSERT_EQUALS("12", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("12", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFF\xFE\x31\x00\x32\x00";
-        ASSERT_EQUALS("12", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("12", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFE\xFF\x00\x2f\x00\x2f\x00\x0a\x00\x31";
-        ASSERT_EQUALS("//\n1", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("//\n1", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFF\xFE\x2f\x00\x2f\x00\x0a\x00\x31\x00";
-        ASSERT_EQUALS("//\n1", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("//\n1", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFE\xFF\x00\x22\x00\x61\x00\x22";
-        ASSERT_EQUALS("\"a\"", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("\"a\"", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFF\xFE\x22\x00\x61\x00\x22\x00";
-        ASSERT_EQUALS("\"a\"", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("\"a\"", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xff\xfe\x0d\x00\x0a\x00\x2f\x00\x2f\x00\x31\x00\x0d\x00\x0a\x00";
-        ASSERT_EQUALS("\n//1", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("\n//1", readfile(code, sizeof(code)-1));
     }
 }
 
@@ -3409,35 +3476,35 @@ static void unicode_invalid()
 {
     {
         const char code[] = "\xFF";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFE";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
-        const char code[] = "\xFE\xFF\x31";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        const char code[] = "\xFE\xFF\x31\x00";
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
-        const char code[] = "\xFF\xFE\x31";
-        ASSERT_EQUALS("1", readfile(code, sizeof(code)));
+        const char code[] = "\xFF\xFE\x31\x00";
+        ASSERT_EQUALS("1", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFE\xFF\x31\x32";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
         const char code[] = "\xFF\xFE\x31\x32";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
-        const char code[] = "\xFE\xFF\x00\x31\x00\x32\x33";
-        ASSERT_EQUALS("", readfile(code, sizeof(code)));
+        const char code[] = "\xFE\xFF\x00\x31\x00\x32\x33\x00";
+        ASSERT_EQUALS("", readfile(code, sizeof(code)-1));
     }
     {
-        const char code[] = "\xFF\xFE\x31\x00\x32\x00\x33";
-        ASSERT_EQUALS("123", readfile(code, sizeof(code)));
+        const char code[] = "\xFF\xFE\x31\x00\x32\x00\x33\x00";
+        ASSERT_EQUALS("123", readfile(code, sizeof(code)-1));
     }
 }
 
@@ -3805,19 +3872,19 @@ static void tokenlist_api()
     // sized array + size
     {
         char input[] = "code"; // NOLINT(misc-const-correctness)
-        simplecpp::TokenList(input,sizeof(input),filenames,"");
+        simplecpp::TokenList(input,sizeof(input)-1,filenames,"");
     }
     {
         const char input[] = "code";
-        simplecpp::TokenList(input,sizeof(input),filenames,"");
+        simplecpp::TokenList(input,sizeof(input)-1,filenames,"");
     }
     {
         unsigned char input[] = "code"; // NOLINT(misc-const-correctness)
-        simplecpp::TokenList(input,sizeof(input),filenames,"");
+        simplecpp::TokenList(input,sizeof(input)-1,filenames,"");
     }
     {
         const unsigned char input[] = "code";
-        simplecpp::TokenList(input,sizeof(input),filenames,"");
+        simplecpp::TokenList(input,sizeof(input)-1,filenames,"");
     }
 #endif // !defined(__cpp_lib_string_view) && !defined(__cpp_lib_span)
     // pointer via View
@@ -3837,11 +3904,11 @@ static void tokenlist_api()
     // sized array + size via View/std::span
     {
         char input[] = "code"; // NOLINT(misc-const-correctness)
-        simplecpp::TokenList({input,sizeof(input)},filenames,"");
+        simplecpp::TokenList({input,sizeof(input)-1},filenames,"");
     }
     {
         const char input[] = "code";
-        simplecpp::TokenList({input,sizeof(input)},filenames,"");
+        simplecpp::TokenList({input,sizeof(input)-1},filenames,"");
     }
     // sized array
     {
@@ -4305,6 +4372,7 @@ static void runTests(int argc, char **argv, Input input)
     TEST_CASE(readfile_unhandled_chars);
     TEST_CASE(readfile_error);
     TEST_CASE(readfile_file_not_found);
+    TEST_CASE(readfile_no_eof_newline);
 
     TEST_CASE(stringify1);
 

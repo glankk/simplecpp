@@ -249,6 +249,7 @@ namespace simplecpp {
             SYNTAX_ERROR,
             DIRECTIVE_AS_MACRO_PARAMETER,
             PORTABILITY_BACKSLASH,
+            PORTABILITY_NO_EOF_NEWLINE,
             UNHANDLED_CHAR_ERROR,
             EXPLICIT_INCLUDE_NOT_FOUND,
             FILE_NOT_FOUND,
