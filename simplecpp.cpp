@@ -475,26 +475,26 @@ namespace {
 
 simplecpp::TokenList::TokenList(std::vector<std::string> &filenames) : frontToken(nullptr), backToken(nullptr), files(filenames) {}
 
-simplecpp::TokenList::TokenList(std::istream &istr, std::vector<std::string> &filenames, const std::string &filename, OutputList *outputList)
+simplecpp::TokenList::TokenList(std::istream &istr, std::vector<std::string> &filenames, const std::string &filename, const DUI &dui, OutputList *outputList)
     : frontToken(nullptr), backToken(nullptr), files(filenames)
 {
     StdIStream stream(istr);
-    readfile(stream,filename,outputList);
+    readfile(stream,filename,dui,outputList);
 }
 
-simplecpp::TokenList::TokenList(const unsigned char* data, std::size_t size, std::vector<std::string> &filenames, const std::string &filename, OutputList *outputList, int /*unused*/)
+simplecpp::TokenList::TokenList(const unsigned char* data, std::size_t size, std::vector<std::string> &filenames, const std::string &filename, const DUI &dui, OutputList *outputList, int /*unused*/)
     : frontToken(nullptr), backToken(nullptr), files(filenames)
 {
     StdCharBufStream stream(data, size);
-    readfile(stream,filename,outputList);
+    readfile(stream,filename,dui,outputList);
 }
 
-simplecpp::TokenList::TokenList(const std::string &filename, std::vector<std::string> &filenames, OutputList *outputList)
+simplecpp::TokenList::TokenList(const std::string &filename, std::vector<std::string> &filenames, const DUI &dui, OutputList *outputList)
     : frontToken(nullptr), backToken(nullptr), files(filenames)
 {
     try {
         FileStream stream(filename, filenames);
-        readfile(stream,filename,outputList);
+        readfile(stream,filename,dui,outputList);
     } catch (const simplecpp::Output & e) {
         outputList->emplace_back(e);
     }
@@ -659,12 +659,15 @@ void simplecpp::TokenList::lineDirective(unsigned int fileIndex_, unsigned int l
 
 static const std::string COMMENT_END("*/");
 
-void simplecpp::TokenList::readfile(Stream &stream, const std::string &filename, OutputList *outputList)
+void simplecpp::TokenList::readfile(Stream &stream, const std::string &filename, const DUI &dui, OutputList *outputList)
 {
     unsigned int multiline = 0U;
     bool trailing_nl = true;
 
     const Token *oldLastToken = nullptr;
+
+    const cstd_t cstd = getCStd(dui.std);
+    const cppstd_t cppstd = getCppStd(dui.std);
 
     Location location(fileIndex(filename), 1, 1);
     while (stream.good()) {
@@ -727,10 +730,64 @@ void simplecpp::TokenList::readfile(Stream &stream, const std::string &filename,
                 if (ppTok->str() == "line")
                     ppTok = advanceAndSkipComments(ppTok);
 
+                if (ppTok && (ppTok->str()[0] == '-' || ppTok->str()[0] == '+')) {
+                    if (outputList) {
+                        simplecpp::Output err{
+                            simplecpp::Output::SYNTAX_ERROR,
+                            location,
+                            "Invalid character in line directive: '" + ppTok->str() + "'."
+                        };
+                        outputList->emplace_back(std::move(err));
+                    }
+                    clear();
+                    return;
+                }
+
                 if (!ppTok || !ppTok->number)
                     continue;
 
-                const unsigned int line = std::atol(ppTok->str().c_str());
+                constexpr unsigned long line_limit = std::numeric_limits<decltype(Location::line)>::max();
+                unsigned long line;
+                try {
+                    line = std::min(line_limit, std::stoul(ppTok->str()));
+                } catch (...) {
+                    line = line_limit;
+                }
+
+                unsigned long maxline;
+                if ((cstd != CUnknown && cstd < C99) || (cppstd != CPPUnknown && cppstd < CPP11))
+                    maxline = 32767;
+                else
+                    maxline = 2147483647;
+
+                if (line == 0 || line > maxline) {
+                    if (outputList) {
+                        const bool unknown_std = cstd == CUnknown && cppstd == CPPUnknown;
+                        std::string msg = "Line number out of range: " + ppTok->str() + ". ";
+                        if (line == 0) {
+                            msg += "Line number zero is undefined behavior.";
+                        } else {
+                            msg += "Line numbers above " + std::to_string(maxline) + " are ";
+                            if (unknown_std)
+                                msg += "undefined behavior or conditionally supported";
+                            else if (cppstd >= CPP26)
+                                msg += "conditionally supported";
+                            else
+                                msg += "undefined behavior";
+                            if (cstd != CUnknown)
+                                msg += std::string(" in ") + getCStdName(cstd);
+                            else if (cppstd != CPPUnknown)
+                                msg += std::string(" in ") + getCppStdName(cppstd);
+                            msg += ".";
+                        }
+                        simplecpp::Output err{
+                            simplecpp::Output::PORTABILITY_LINE_DIRECTIVE,
+                            location, msg
+                        };
+                        outputList->emplace_back(std::move(err));
+                    }
+                }
+
                 ppTok = advanceAndSkipComments(ppTok);
 
                 unsigned int fileindex;
@@ -3163,7 +3220,7 @@ std::pair<simplecpp::FileData *, bool> simplecpp::FileDataCache::tryload(FileDat
         return {id_it->second, false};
     }
 
-    auto *const data = new FileData {path, TokenList(path, filenames, outputList)};
+    auto *const data = new FileData {path, TokenList(path, filenames, {}, outputList)};
 
     if (dui.removeComments)
         data->tokens.removeComments();
@@ -3999,6 +4056,20 @@ simplecpp::cstd_t simplecpp::getCStd(const std::string &std)
     return CUnknown;
 }
 
+const char *simplecpp::getCStdName(cstd_t std)
+{
+    switch (std) {
+    case CUnknown: return "C";
+    case C89: return "C89";
+    case C99: return "C99";
+    case C11: return "C11";
+    case C17: return "C17";
+    case C23: return "C23";
+    case C2Y: return "C2Y";
+    }
+    return "";
+}
+
 std::string simplecpp::getCStdString(cstd_t std)
 {
     switch (std) {
@@ -4049,6 +4120,21 @@ simplecpp::cppstd_t simplecpp::getCppStd(const std::string &std)
     if (std == "c++26" || std == "c++2c" || std == "gnu++26" || std == "gnu++2c")
         return CPP26;
     return CPPUnknown;
+}
+
+const char *simplecpp::getCppStdName(cppstd_t std)
+{
+    switch (std) {
+    case CPPUnknown: return "C++";
+    case CPP03: return "C++03";
+    case CPP11: return "C++11";
+    case CPP14: return "C++14";
+    case CPP17: return "C++17";
+    case CPP20: return "C++20";
+    case CPP23: return "C++23";
+    case CPP26: return "C++26";
+    }
+    return "";
 }
 
 std::string simplecpp::getCppStdString(cppstd_t std)
